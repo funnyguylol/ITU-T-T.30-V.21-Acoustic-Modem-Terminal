@@ -1,0 +1,1517 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ITU-T T.30 / V.21 Acoustic Modem Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        },
+                        phosphor: {
+                            DEFAULT: '#10b981',
+                            bright: '#34d399',
+                            dim: '#065f46',
+                            glow: 'rgba(16, 185, 129, 0.35)'
+                        },
+                        amber: {
+                            DEFAULT: '#f59e0b',
+                            bright: '#fbbf24',
+                            dim: '#78350f',
+                            glow: 'rgba(245, 158, 11, 0.35)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom CRT & Oscilloscope Aesthetics */
+        body {
+            background-color: #090d16;
+            color: #e2e8f0;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08) 0%, transparent 60%),
+                linear-gradient(rgba(15, 23, 42, 0.9) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(15, 23, 42, 0.9) 1px, transparent 1px);
+            background-size: 100% 100%, 24px 24px, 24px 24px;
+        }
+
+        .crt-scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.35) 50%
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        .phosphor-shadow {
+            box-shadow: 0 0 20px -5px rgba(16, 185, 129, 0.25), inset 0 0 15px rgba(16, 185, 129, 0.05);
+        }
+
+        .amber-shadow {
+            box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.25), inset 0 0 15px rgba(245, 158, 11, 0.05);
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Glowing status LED */
+        @keyframes pulse-led {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.92); }
+        }
+        .led-active {
+            animation: pulse-led 1s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+
+    <!-- Top Navigation / Status Header -->
+    <header class="border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.25)]">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-100 font-mono">ITU-T T.30 / V.21</h1>
+                        <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            FSK STEGANOGRAPHY TERMINAL
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400 hidden sm:block">Facsimile Binary Signaling Protocol Synthesizer &amp; Goertzel Demodulator</p>
+                </div>
+            </div>
+
+            <!-- Hardware Status Indicators -->
+            <div class="flex items-center space-x-4 font-mono text-xs">
+                <div class="hidden md:flex items-center space-x-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <div class="flex items-center space-x-1.5">
+                        <span id="led-tx" class="w-2 h-2 rounded-full bg-slate-600 transition-colors"></span>
+                        <span class="text-slate-400">TX</span>
+                    </div>
+                    <div class="w-px h-3 bg-slate-800"></div>
+                    <div class="flex items-center space-x-1.5">
+                        <span id="led-carrier" class="w-2 h-2 rounded-full bg-slate-600 transition-colors"></span>
+                        <span class="text-slate-400">DCD</span>
+                    </div>
+                    <div class="w-px h-3 bg-slate-800"></div>
+                    <div class="flex items-center space-x-1.5">
+                        <span id="led-fsk" class="w-2 h-2 rounded-full bg-emerald-500/40"></span>
+                        <span id="status-freq" class="text-emerald-400">1650/1850 Hz</span>
+                    </div>
+                </div>
+
+                <!-- Theme Accent Toggle (Phosphor Green vs Amber CRT) -->
+                <button id="theme-toggle-btn" title="Switch CRT Phosphor Color" class="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 transition flex items-center space-x-1.5">
+                    <span id="theme-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                    <span class="hidden sm:inline text-[11px]">CRT</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Notification Toast Banner (Replaces alert()) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- Main Content Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Mode Navigation Tabs -->
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div class="inline-flex p-1 rounded-xl bg-slate-900 border border-slate-800">
+                <button id="tab-modulator" class="px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span>1. T.30 ENCODER / SYNTHESIZER</span>
+                </button>
+                <button id="tab-demodulator" class="px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    <span>2. FSK DEMODULATOR / DECODER</span>
+                </button>
+            </div>
+
+            <div class="text-xs font-mono text-slate-400 flex items-center space-x-2">
+                <span class="px-2 py-1 rounded bg-slate-900 border border-slate-800">Sample Rate: <strong class="text-slate-200">44.1 kHz</strong></span>
+                <span class="px-2 py-1 rounded bg-slate-900 border border-slate-800">FSK Shift: <strong class="text-slate-200">±100 Hz (1750 Hz Center)</strong></span>
+            </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- SECTION 1: MODULATOR / SYNTHESIZER VIEW                   -->
+        <!-- ========================================================= -->
+        <div id="view-modulator" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Message Input & Protocol Settings (5 Cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- Secret Payload Card -->
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                    <div class="flex items-center justify-between">
+                        <label for="secret-message" class="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center space-x-2">
+                            <span>Payload Message (ASCII)</span>
+                        </label>
+                        <span id="char-counter" class="text-xs font-mono text-slate-400">0 chars</span>
+                    </div>
+
+                    <textarea id="secret-message" rows="4" 
+                        class="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20 rounded-xl p-3.5 font-mono text-sm text-emerald-300 placeholder-slate-600 transition outline-none resize-none"
+                        placeholder="Enter secret text to modulate into ITU-T T.30 fax frames...">AGENT COOPER: MEET AT THE GREAT NORTHERN AT MIDNIGHT. // T.30-NSF-001</textarea>
+
+                    <!-- Quick Preset Messages -->
+                    <div class="flex flex-wrap gap-1.5">
+                        <button type="button" class="preset-btn px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] font-mono text-slate-400 hover:text-slate-200 transition" data-msg="TOP SECRET // COORDINATES: 37.3382 N, 121.8863 W // END">Coords</button>
+                        <button type="button" class="preset-btn px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] font-mono text-slate-400 hover:text-slate-200 transition" data-msg="ITU-T T.30 DIS/DCS FRAME: REMOTE STATION ID +1-555-0199">Fax Header</button>
+                        <button type="button" class="preset-btn px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[11px] font-mono text-slate-400 hover:text-slate-200 transition" data-msg="THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789">Pangram</button>
+                    </div>
+                </div>
+
+                <!-- T.30 Protocol Configuration Card -->
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                    <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-2.5 flex items-center justify-between">
+                        <span>T.30 / V.21 Framing Parameters</span>
+                        <span class="text-[10px] text-slate-500 font-normal">CCITT Rec. T.30</span>
+                    </h2>
+
+                    <!-- Option 1: Handshake Tones -->
+                    <label class="flex items-start justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition">
+                        <div class="pr-3">
+                            <div class="text-sm font-medium text-slate-200">T.30 Handshake Intro (CNG + CED)</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Prepends 1100 Hz Calling Tone (0.5s) + 2100 Hz Called Station Identification tone (1.4s)</div>
+                        </div>
+                        <input type="checkbox" id="opt-handshake" checked class="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500/30">
+                    </label>
+
+                    <!-- Option 2: Training Burst -->
+                    <label class="flex items-start justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition">
+                        <div class="pr-3">
+                            <div class="text-sm font-medium text-slate-200">V.29 / V.17 High-Speed Training Burst</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Appends QAM modem equalizer training screech &amp; TCF carrier burst after V.21 frame</div>
+                        </div>
+                        <input type="checkbox" id="opt-training" checked class="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500/30">
+                    </label>
+
+                    <!-- Option 3: Baud Rate Selector -->
+                    <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium text-slate-200">V.21 Channel 2 Symbol Rate</span>
+                            <span id="duration-estimate" class="text-xs font-mono text-emerald-400">~3.8s audio</span>
+                        </div>
+                        <select id="opt-baud" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:border-emerald-500 outline-none">
+                            <option value="300" selected>300 bps — Authentic ITU-T V.21 Ch.2 Standard</option>
+                            <option value="600">600 bps — 2x Turbo FSK Mode</option>
+                            <option value="1200">1200 bps — 4x High-Density FSK Mode</option>
+                        </select>
+                        <p class="text-[11px] text-slate-500">Mark ('1') = 1650 Hz &bull; Space ('0') = 1850 Hz &bull; LSB-First + HDLC Bit-Stuffing</p>
+                    </div>
+
+                    <!-- Primary Action Buttons -->
+                    <div class="pt-2 grid grid-cols-2 gap-3">
+                        <button id="btn-play" class="col-span-2 sm:col-span-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition flex items-center justify-center space-x-2">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                            <span>TRANSMIT AUDIO</span>
+                        </button>
+
+                        <button id="btn-stop" disabled class="col-span-2 sm:col-span-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-200 font-mono font-bold text-xs sm:text-sm border border-slate-700 transition flex items-center justify-center space-x-2">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"/></svg>
+                            <span>ABORT / STOP</span>
+                        </button>
+
+                        <button id="btn-download-wav" class="col-span-2 py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-emerald-500/40 font-mono font-semibold text-xs transition flex items-center justify-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            <span>EXPORT 16-BIT PCM .WAV FILE</span>
+                        </button>
+
+                        <button id="btn-send-to-decoder" class="col-span-2 py-2 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 font-mono text-xs transition flex items-center justify-center space-x-2">
+                            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                            <span>LOOPBACK TEST IN FSK DECODER</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Oscilloscope, Waterfall & HDLC Bitstream Inspector (7 Cols) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- Dual CRT Visualizer Panel -->
+                <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 phosphor-shadow relative overflow-hidden">
+                    <div class="crt-scanlines absolute inset-0 z-10"></div>
+
+                    <!-- Visualizer Header & Current Phase Telemetry -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3 relative z-20">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Acoustic Telemetry Scope</h3>
+                        </div>
+                        <div class="flex items-center space-x-2 font-mono text-xs">
+                            <span id="phase-badge" class="px-2.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">IDLE / STANDBY</span>
+                            <span id="time-readout" class="text-slate-400">0.00s / 0.00s</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mb-4 relative z-20">
+                        <div id="playback-progress" class="h-full bg-emerald-400 w-0 transition-all duration-75"></div>
+                    </div>
+
+                    <!-- Oscilloscope Canvas (Time Domain) -->
+                    <div class="space-y-3 relative z-20">
+                        <div>
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mb-1">
+                                <span>CH1: TIME-DOMAIN WAVEFORM (AMPLITUDE)</span>
+                                <span>20ms / DIV</span>
+                            </div>
+                            <div class="w-full h-36 bg-[#05080f] rounded-xl border border-slate-800/90 overflow-hidden relative">
+                                <canvas id="scope-canvas" class="w-full h-full block"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Waterfall / Spectrum Canvas (Frequency Domain) -->
+                        <div>
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mb-1">
+                                <span>CH2: FSK SPECTROGRAM WATERFALL (0 - 3400 Hz PSTN BAND)</span>
+                                <span class="text-emerald-500/80">MARK 1650Hz | SPACE 1850Hz</span>
+                            </div>
+                            <div class="w-full h-40 bg-[#05080f] rounded-xl border border-slate-800/90 overflow-hidden relative">
+                                <canvas id="waterfall-canvas" class="w-full h-full block"></canvas>
+                                <!-- Frequency Marker Overlay -->
+                                <div class="absolute bottom-1 left-2 right-2 flex justify-between text-[9px] font-mono text-slate-500 pointer-events-none">
+                                    <span>300 Hz</span>
+                                    <span class="text-amber-400/70">1100 Hz (CNG)</span>
+                                    <span class="text-emerald-400/90">1650/1850 Hz (V.21)</span>
+                                    <span class="text-amber-400/70">2100 Hz (CED)</span>
+                                    <span>3200 Hz</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HDLC Frame & Bitstream Inspector -->
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div>
+                            <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">ITU-T T.30 HDLC Frame Inspector</h3>
+                            <p class="text-[11px] text-slate-400">Live packet breakdown including 0x7E preamble flags, T.30 control fields, bit-stuffing &amp; CRC-16-CCITT</p>
+                        </div>
+                        <div class="flex items-center space-x-2 text-[11px] font-mono">
+                            <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30" id="stat-bits">0 bits</span>
+                            <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30" id="stat-crc">CRC: 0x0000</span>
+                        </div>
+                    </div>
+
+                    <!-- Frame Structure Legend -->
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] font-mono">
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <div class="text-slate-500 text-[10px]">PREAMBLE</div>
+                            <div class="text-amber-400 font-semibold">0x7E × 12</div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <div class="text-slate-500 text-[10px]">ADDR / CTRL</div>
+                            <div class="text-sky-400 font-semibold">0xFF 0x13</div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <div class="text-slate-500 text-[10px]">FCF (T.30)</div>
+                            <div class="text-purple-400 font-semibold">0x20 (NSF)</div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                            <div class="text-slate-500 text-[10px]">PAYLOAD</div>
+                            <div class="text-emerald-400 font-semibold" id="stat-bytes">0 Bytes</div>
+                        </div>
+                        <div class="p-2 rounded-lg bg-slate-950 border border-slate-800 col-span-2 sm:col-span-1">
+                            <div class="text-slate-500 text-[10px]">FCS / CLOSING</div>
+                            <div class="text-rose-400 font-semibold">CRC16 + 0x7E</div>
+                        </div>
+                    </div>
+
+                    <!-- Hex & Bitstream Tabs -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-mono text-slate-400">HDLC HEX DUMP (PRE-STUFFED FRAME)</span>
+                            <button id="btn-copy-hex" class="text-[11px] font-mono text-emerald-400 hover:text-emerald-300 transition">Copy Hex</button>
+                        </div>
+                        <div id="hex-dump-box" class="w-full h-24 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-300 leading-relaxed break-all">
+                            --
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-mono text-slate-400">TRANSMITTED V.21 FSK BITSTREAM (LSB-FIRST + ZERO-BIT INSERTION)</span>
+                            <span id="stuffed-count" class="text-[11px] font-mono text-slate-500">0 stuffed bits</span>
+                        </div>
+                        <div id="bitstream-box" class="w-full h-20 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400/90 tracking-wider break-all">
+                            --
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- SECTION 2: FSK DEMODULATOR / DECODER VIEW                 -->
+        <!-- ========================================================= -->
+        <div id="view-demodulator" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Audio Source & Decoder Controls (5 Cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+                    <div>
+                        <h2 class="text-sm font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                            <span>Goertzel V.21 FSK Demodulator</span>
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-1">Extracts hidden T.30 HDLC frames from acoustic signals by comparing dual-tone Goertzel filter energy at 1650 Hz (Mark) vs 1850 Hz (Space).</p>
+                    </div>
+
+                    <!-- Source 1: Decode Synthesized Buffer -->
+                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                        <div class="text-xs font-mono font-semibold text-slate-300">OPTION A: DECODE CURRENT GENERATED SIGNAL</div>
+                        <p class="text-xs text-slate-400">Runs the DSP demodulator directly against the audio buffer synthesized in the Encoder tab.</p>
+                        <button id="btn-decode-current" class="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-xs shadow-lg shadow-amber-500/20 transition flex items-center justify-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                            <span>DEMODULATE GENERATED AUDIO</span>
+                        </button>
+                    </div>
+
+                    <!-- Source 2: Upload .WAV File -->
+                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                        <div class="text-xs font-mono font-semibold text-slate-300">OPTION B: UPLOAD .WAV / AUDIO FILE</div>
+                        <p class="text-xs text-slate-400">Upload any T.30 V.21 FSK audio recording (.wav, .mp3, .ogg) to recover its hidden payload.</p>
+                        
+                        <label class="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 transition">
+                            <div class="flex flex-col items-center justify-center pt-4 pb-5 text-center px-3">
+                                <svg class="w-6 h-6 mb-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                <p class="text-xs font-mono text-slate-300" id="upload-filename">Click to select .WAV audio file</p>
+                                <p class="text-[10px] text-slate-500 mt-0.5">Supports PCM WAV / Web Audio decodable formats</p>
+                            </div>
+                            <input id="wav-file-input" type="file" accept="audio/*" class="hidden" />
+                        </label>
+                    </div>
+
+                    <!-- Decoder Baud Rate Hint -->
+                    <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                        <label class="text-xs font-mono text-slate-400 block">Expected Symbol Baud Rate</label>
+                        <select id="decode-baud" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 outline-none">
+                            <option value="auto" selected>Auto-Detect (300 / 600 / 1200 bps)</option>
+                            <option value="300">300 bps (ITU-T V.21 Standard)</option>
+                            <option value="600">600 bps (2x FSK)</option>
+                            <option value="1200">1200 bps (4x FSK)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Demodulation Results & Diagnostics (7 Cols) -->
+            <div class="lg:col-span-7 space-y-6">
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div class="flex items-center space-x-2">
+                            <span id="decode-status-led" class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+                            <h3 class="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">Recovered T.30 Message Output</h3>
+                        </div>
+                        <span id="decode-badge" class="px-2.5 py-0.5 rounded text-xs font-mono bg-slate-950 border border-slate-800 text-slate-400">AWAITING SIGNAL</span>
+                    </div>
+
+                    <!-- Recovered Plaintext Output -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-mono text-amber-400">DECODED ASCII PAYLOAD</span>
+                            <button id="btn-copy-decoded" class="text-xs font-mono text-slate-400 hover:text-slate-200 transition">Copy Text</button>
+                        </div>
+                        <div id="decoded-text-output" class="w-full min-h-[120px] bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-sm text-amber-300 whitespace-pre-wrap break-words leading-relaxed">No signal demodulated yet. Click "Demodulate Generated Audio" or upload a .WAV file.</div>
+                    </div>
+
+                    <!-- DSP Telemetry Metrics -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+                        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                            <div class="text-[10px] text-slate-500">DETECTED RATE</div>
+                            <div id="dec-stat-baud" class="text-xs font-bold text-slate-200 mt-0.5">-- bps</div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                            <div class="text-[10px] text-slate-500">HDLC SYNC FLAGS</div>
+                            <div id="dec-stat-flags" class="text-xs font-bold text-emerald-400 mt-0.5">0 flags</div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                            <div class="text-[10px] text-slate-500">CRC-16-CCITT</div>
+                            <div id="dec-stat-crc" class="text-xs font-bold text-slate-200 mt-0.5">--</div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                            <div class="text-[10px] text-slate-500">TONES DETECTED</div>
+                            <div id="dec-stat-tones" class="text-xs font-bold text-sky-400 mt-0.5">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Demodulator Diagnostic Log -->
+                    <div class="space-y-1.5">
+                        <span class="text-[11px] font-mono text-slate-400">DSP DEMODULATION LOG</span>
+                        <div id="decoder-log" class="w-full h-36 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-slate-400 space-y-1">
+                            <div>[SYS] Goertzel dual-filter bank initialized (f_mark=1650Hz, f_space=1850Hz).</div>
+                            <div>[SYS] Ready for ITU-T T.30 HDLC frame extraction.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950/70 py-4 mt-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs font-mono text-slate-500 gap-2">
+            <div>ITU-T Rec. T.30 / V.21 Ch.2 FSK Acoustic Modem Simulator</div>
+            <div>Phase-Continuous FSK Synthesis &bull; HDLC Zero-Bit Insertion &bull; Goertzel DSP</div>
+        </div>
+    </footer>
+
+    <!-- ===================================================================== -->
+    <!-- CORE APPLICATION LOGIC: T.30 PROTOCOL ENGINE, SYNTHESIZER & DECODER   -->
+    <!-- ===================================================================== -->
+    <script>
+        /**
+         * ITU-T T.30 / V.21 Protocol Constants
+         * Channel 2 (Used for Group 3 Facsimile Binary Coded Signaling):
+         *   Binary '1' (Mark)  = 1650 Hz
+         *   Binary '0' (Space) = 1850 Hz
+         *   Handshake Tones:
+         *     CNG (Calling Tone) = 1100 Hz (0.5s ON)
+         *     CED (Called Station ID) = 2100 Hz (1.4s - 2.6s ON)
+         */
+        const SAMPLE_RATE = 44100;
+        const FREQ_MARK = 1650;
+        const FREQ_SPACE = 1850;
+        const FREQ_CNG = 1100;
+        const FREQ_CED = 2100;
+
+        // Application State
+        let audioCtx = null;
+        let activeSourceNode = null;
+        let analyserNode = null;
+        let animationFrameId = null;
+        let isPlaying = false;
+        let playStartTime = 0;
+        let currentAudioBuffer = null; // Float32Array of the full generated waveform
+        let currentTimeline = [];      // Metadata markers for UI phase display
+        let crtTheme = 'emerald';      // 'emerald' or 'amber'
+
+        // DOM References
+        const elMessage = document.getElementById('secret-message');
+        const elCharCounter = document.getElementById('char-counter');
+        const elOptHandshake = document.getElementById('opt-handshake');
+        const elOptTraining = document.getElementById('opt-training');
+        const elOptBaud = document.getElementById('opt-baud');
+        const elDurationEst = document.getElementById('duration-estimate');
+
+        const btnPlay = document.getElementById('btn-play');
+        const btnStop = document.getElementById('btn-stop');
+        const btnDownloadWav = document.getElementById('btn-download-wav');
+        const btnSendToDecoder = document.getElementById('btn-send-to-decoder');
+
+        const elHexDump = document.getElementById('hex-dump-box');
+        const elBitstream = document.getElementById('bitstream-box');
+        const elStatBits = document.getElementById('stat-bits');
+        const elStatCrc = document.getElementById('stat-crc');
+        const elStatBytes = document.getElementById('stat-bytes');
+        const elStuffedCount = document.getElementById('stuffed-count');
+
+        const scopeCanvas = document.getElementById('scope-canvas');
+        const waterfallCanvas = document.getElementById('waterfall-canvas');
+        const scopeCtx = scopeCanvas.getContext('2d');
+        const waterfallCtx = waterfallCanvas.getContext('2d');
+
+        // =====================================================================
+        // 1. CRC-16-CCITT & HDLC FRAMING ENGINE (ITU-T T.30 COMPLIANT)
+        // =====================================================================
+
+        /**
+         * Computes standard HDLC / ITU-T T.30 16-bit CRC-CCITT (Poly 0x8408 reflected)
+         * @param {Uint8Array} bytes - Raw frame bytes (Address, Control, FCF, Payload)
+         * @returns {number} 16-bit FCS value
+         */
+        function computeCRC16CCITT(bytes) {
+            let crc = 0xFFFF;
+            for (let i = 0; i < bytes.length; i++) {
+                crc ^= bytes[i];
+                for (let bit = 0; bit < 8; bit++) {
+                    if (crc & 0x0001) {
+                        crc = (crc >>> 1) ^ 0x8408;
+                    } else {
+                        crc = (crc >>> 1);
+                    }
+                }
+            }
+            return (~crc) & 0xFFFF;
+        }
+
+        /**
+         * Builds a complete ITU-T T.30 HDLC Frame and returns both raw bytes and
+         * the bit-stuffed bitstream ready for V.21 FSK modulation.
+         */
+        function buildT30HDLCFrame(messageText) {
+            const encoder = new TextEncoder();
+            const payloadBytes = encoder.encode(messageText);
+
+            // T.30 Standard HDLC Header:
+            // Address: 0xFF (All stations)
+            // Control: 0x13 (UI - Unnumbered Information, Final bit = 1)
+            // FCF:     0x20 (NSF - Non-Standard Facilities, ideal for custom text data!)
+            const frameBody = new Uint8Array(3 + payloadBytes.length);
+            frameBody[0] = 0xFF;
+            frameBody[1] = 0x13;
+            frameBody[2] = 0x20;
+            frameBody.set(payloadBytes, 3);
+
+            // Compute 16-bit FCS (Frame Check Sequence)
+            const crc = computeCRC16CCITT(frameBody);
+            const fcsLow = crc & 0xFF;
+            const fcsHigh = (crc >>> 8) & 0xFF;
+
+            // Complete Unstuffed Frame (Header + Payload + 2-byte FCS)
+            const fullFrameBytes = new Uint8Array(frameBody.length + 2);
+            fullFrameBytes.set(frameBody, 0);
+            fullFrameBytes[frameBody.length] = fcsLow;
+            fullFrameBytes[frameBody.length + 1] = fcsHigh;
+
+            // Convert bytes to LSB-first bit array WITH HDLC zero-bit stuffing
+            // (After five consecutive '1' bits inside the frame body, insert a '0')
+            const stuffedBits = [];
+            let consecutiveOnes = 0;
+            let stuffedCount = 0;
+
+            for (let i = 0; i < fullFrameBytes.length; i++) {
+                const byte = fullFrameBytes[i];
+                for (let b = 0; b < 8; b++) {
+                    const bit = (byte >>> b) & 1;
+                    stuffedBits.push(bit);
+                    if (bit === 1) {
+                        consecutiveOnes++;
+                        if (consecutiveOnes === 5) {
+                            stuffedBits.push(0); // Stuff a '0' bit
+                            consecutiveOnes = 0;
+                            stuffedCount++;
+                        }
+                    } else {
+                        consecutiveOnes = 0;
+                    }
+                }
+            }
+
+            // Flag byte 0x7E = 01111110 (sent WITHOUT bit-stuffing!)
+            const flagBits = [0, 1, 1, 1, 1, 1, 1, 0];
+
+            // T.30 specifies ~1 second of preamble flags (0x7E) so the receiving modem
+            // can achieve bit synchronization and lock onto the HDLC frame boundary.
+            const preambleFlagsCount = 12;
+            const closingFlagsCount = 4;
+
+            const finalBitstream = [];
+            // Add Mark idle lead-in (16 bits of '1')
+            for (let i = 0; i < 16; i++) finalBitstream.push(1);
+            // Preamble 0x7E flags
+            for (let f = 0; f < preambleFlagsCount; f++) finalBitstream.push(...flagBits);
+            // Stuffed frame body + FCS
+            finalBitstream.push(...stuffedBits);
+            // Closing 0x7E flags
+            for (let f = 0; f < closingFlagsCount; f++) finalBitstream.push(...flagBits);
+            // Trailing Mark idle (8 bits of '1')
+            for (let i = 0; i < 8; i++) finalBitstream.push(1);
+
+            return {
+                payloadBytes,
+                fullFrameBytes,
+                crc,
+                stuffedCount,
+                finalBitstream
+            };
+        }
+
+        // =====================================================================
+        // 2. PHASE-CONTINUOUS FSK & T.30 AUDIO WAVEFORM SYNTHESIZER
+        // =====================================================================
+
+        /**
+         * Generates the complete PCM Float32Array audio buffer for the T.30 transmission.
+         * Uses continuous phase accumulation so frequency shifts never click or pop.
+         */
+        function synthesizeT30Audio() {
+            const text = elMessage.value || "EMPTY";
+            const includeHandshake = elOptHandshake.checked;
+            const includeTraining = elOptTraining.checked;
+            const baudRate = parseInt(elOptBaud.value, 10) || 300;
+
+            const frameData = buildT30HDLCFrame(text);
+            const bits = frameData.finalBitstream;
+
+            const samples = [];
+            const timeline = [];
+            let phase = 0;
+
+            // Helper: append pure tone with smooth 5ms raised-cosine fade in/out
+            function appendTone(freq, durationSec, amplitude, label) {
+                const startSample = samples.length;
+                const totalSamples = Math.floor(durationSec * SAMPLE_RATE);
+                const fadeSamples = Math.min(Math.floor(0.005 * SAMPLE_RATE), Math.floor(totalSamples / 4));
+
+                for (let i = 0; i < totalSamples; i++) {
+                    let env = 1.0;
+                    if (i < fadeSamples) {
+                        env = 0.5 * (1 - Math.cos((Math.PI * i) / fadeSamples));
+                    } else if (i > totalSamples - fadeSamples) {
+                        env = 0.5 * (1 - Math.cos((Math.PI * (totalSamples - i)) / fadeSamples));
+                    }
+                    samples.push(Math.sin(phase) * amplitude * env);
+                    phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+                    if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                }
+                timeline.push({
+                    label,
+                    startSec: startSample / SAMPLE_RATE,
+                    endSec: samples.length / SAMPLE_RATE
+                });
+            }
+
+            // Helper: append silence
+            function appendSilence(durationSec, label) {
+                const startSample = samples.length;
+                const totalSamples = Math.floor(durationSec * SAMPLE_RATE);
+                for (let i = 0; i < totalSamples; i++) {
+                    samples.push(0);
+                }
+                timeline.push({
+                    label,
+                    startSec: startSample / SAMPLE_RATE,
+                    endSec: samples.length / SAMPLE_RATE
+                });
+            }
+
+            // 1. Initial brief silence
+            appendSilence(0.12, "LINE SEIZE");
+
+            // 2. Optional ITU-T T.30 CNG (1100 Hz) & CED (2100 Hz) Handshake
+            if (includeHandshake) {
+                appendTone(FREQ_CNG, 0.45, 0.55, "CNG CALLING TONE (1100 Hz)");
+                appendSilence(0.25, "WAIT FOR ANSWER");
+                appendTone(FREQ_CED, 1.15, 0.60, "CED ANSWER TONE (2100 Hz)");
+                appendSilence(0.08, "75ms T.30 PAUSE");
+            }
+
+            // 3. V.21 Channel 2 Phase-Continuous FSK Data Transmission (The Hidden Message!)
+            const fskStartSample = samples.length;
+            const samplesPerBit = SAMPLE_RATE / baudRate;
+            const fskAmplitude = 0.72;
+            const totalFskSamples = Math.ceil(bits.length * samplesPerBit);
+            const fskFade = Math.floor(0.004 * SAMPLE_RATE);
+
+            for (let s = 0; s < totalFskSamples; s++) {
+                const bitIndex = Math.min(bits.length - 1, Math.floor(s / samplesPerBit));
+                const bit = bits[bitIndex];
+                const freq = (bit === 1) ? FREQ_MARK : FREQ_SPACE;
+
+                let env = 1.0;
+                if (s < fskFade) env = s / fskFade;
+                else if (s > totalFskSamples - fskFade) env = (totalFskSamples - s) / fskFade;
+
+                samples.push(Math.sin(phase) * fskAmplitude * env);
+                phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+                if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+            }
+
+            timeline.push({
+                label: `V.21 FSK DATA (${baudRate} bps)`,
+                startSec: fskStartSample / SAMPLE_RATE,
+                endSec: samples.length / SAMPLE_RATE
+            });
+
+            // 4. Optional V.29 / V.17 High-Speed QAM Training Burst (Classic Fax "Screech")
+            if (includeTraining) {
+                appendSilence(0.075, "T.30 TURNAROUND");
+                const trainStart = samples.length;
+
+                // Segment A: 1700 Hz / 1800 Hz alternating carrier sync (0.25s)
+                const segASamples = Math.floor(0.25 * SAMPLE_RATE);
+                for (let i = 0; i < segASamples; i++) {
+                    const altFreq = (Math.floor(i / 40) % 2 === 0) ? 1700 : 1800;
+                    samples.push(Math.sin(phase) * 0.55);
+                    phase += (2 * Math.PI * altFreq) / SAMPLE_RATE;
+                    if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                }
+
+                // Segment B: Pseudo-random QAM constellation scrambled burst (0.65s)
+                // Sounds authentically like a 9600/14400 bps fax training & TCF sequence
+                const segBSamples = Math.floor(0.65 * SAMPLE_RATE);
+                let lfsr = 0xACE1; // 16-bit LFSR for authentic CCITT scrambler sound
+                const symbolPeriod = Math.floor(SAMPLE_RATE / 2400); // 2400 baud QAM carrier at 1700 Hz
+                let symI = 1, symQ = 0;
+
+                for (let i = 0; i < segBSamples; i++) {
+                    if (i % symbolPeriod === 0) {
+                        const lsb = lfsr & 1;
+                        lfsr >>= 1;
+                        if (lsb) lfsr ^= 0xB400;
+                        const quad = lfsr & 0x03;
+                        const angles = [0.25 * Math.PI, 0.75 * Math.PI, 1.25 * Math.PI, 1.75 * Math.PI];
+                        const mag = ((lfsr >> 2) & 1) ? 1.0 : 0.65;
+                        symI = Math.cos(angles[quad]) * mag;
+                        symQ = Math.sin(angles[quad]) * mag;
+                    }
+                    const carrierAngle = (2 * Math.PI * 1700 * i) / SAMPLE_RATE;
+                    const qamSample = (symI * Math.cos(carrierAngle) - symQ * Math.sin(carrierAngle)) * 0.48;
+                    samples.push(qamSample);
+                }
+
+                timeline.push({
+                    label: "V.29 / V.17 TRAINING BURST",
+                    startSec: trainStart / SAMPLE_RATE,
+                    endSec: samples.length / SAMPLE_RATE
+                });
+            }
+
+            appendSilence(0.15, "ON-HOOK");
+
+            const buffer = new Float32Array(samples);
+            currentAudioBuffer = buffer;
+            currentTimeline = timeline;
+            return { buffer, timeline, frameData };
+        }
+
+        // =====================================================================
+        // 3. UI & FRAME INSPECTOR UPDATES
+        // =====================================================================
+
+        function updateFrameInspector() {
+            const text = elMessage.value || "";
+            elCharCounter.textContent = `${text.length} chars`;
+
+            const frameData = buildT30HDLCFrame(text);
+            elStatBytes.textContent = `${frameData.payloadBytes.length} Bytes`;
+            elStatBits.textContent = `${frameData.finalBitstream.length} bits`;
+            elStatCrc.textContent = `CRC: 0x${frameData.crc.toString(16).toUpperCase().padStart(4, '0')}`;
+            elStuffedCount.textContent = `${frameData.stuffedCount} stuffed bits`;
+
+            // Format Hex Dump
+            const hexArray = Array.from(frameData.fullFrameBytes).map(b =>
+                b.toString(16).toUpperCase().padStart(2, '0')
+            );
+            elHexDump.innerHTML = `<span class="text-amber-400">7E ... 7E</span> ` +
+                hexArray.slice(0, 3).map(h => `<span class="text-sky-400">${h}</span>`).join(' ') + ' ' +
+                hexArray.slice(3, -2).map(h => `<span class="text-emerald-300">${h}</span>`).join(' ') + ' ' +
+                hexArray.slice(-2).map(h => `<span class="text-rose-400">${h}</span>`).join(' ') +
+                ` <span class="text-amber-400">7E ... 7E</span>`;
+
+            // Format Bitstream preview
+            elBitstream.textContent = frameData.finalBitstream.join('');
+
+            // Estimate total audio duration
+            const baud = parseInt(elOptBaud.value, 10) || 300;
+            let estSec = 0.27 + (frameData.finalBitstream.length / baud);
+            if (elOptHandshake.checked) estSec += 1.93;
+            if (elOptTraining.checked) estSec += 0.975;
+            elDurationEst.textContent = `~${estSec.toFixed(2)}s audio`;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const borderCol = type === 'success' ? 'border-emerald-500/50 text-emerald-300' :
+                              type === 'warn' ? 'border-amber-500/50 text-amber-300' :
+                              'border-slate-700 text-slate-200';
+            toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl bg-slate-900/95 backdrop-blur border ${borderCol} shadow-xl font-mono text-xs flex items-center space-x-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        // =====================================================================
+        // 4. WEB AUDIO API PLAYBACK & LIVE OSCILLOSCOPE / WATERFALL
+        // =====================================================================
+
+        function resizeCanvases() {
+            [scopeCanvas, waterfallCanvas].forEach(canvas => {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    canvas.width = rect.width * window.devicePixelRatio;
+                    canvas.height = rect.height * window.devicePixelRatio;
+                }
+            });
+            drawIdleScope();
+        }
+
+        function drawIdleScope() {
+            const w = scopeCanvas.width;
+            const h = scopeCanvas.height;
+            scopeCtx.fillStyle = '#05080f';
+            scopeCtx.fillRect(0, 0, w, h);
+
+            // Grid lines
+            scopeCtx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+            scopeCtx.lineWidth = 1;
+            const stepX = w / 10;
+            const stepY = h / 4;
+            for (let x = stepX; x < w; x += stepX) {
+                scopeCtx.beginPath(); scopeCtx.moveTo(x, 0); scopeCtx.lineTo(x, h); scopeCtx.stroke();
+            }
+            for (let y = stepY; y < h; y += stepY) {
+                scopeCtx.beginPath(); scopeCtx.moveTo(0, y); scopeCtx.lineTo(w, y); scopeCtx.stroke();
+            }
+
+            // Center flatline
+            scopeCtx.strokeStyle = crtTheme === 'emerald' ? 'rgba(16, 185, 129, 0.45)' : 'rgba(245, 158, 11, 0.45)';
+            scopeCtx.lineWidth = 2;
+            scopeCtx.beginPath();
+            scopeCtx.moveTo(0, h / 2);
+            scopeCtx.lineTo(w, h / 2);
+            scopeCtx.stroke();
+        }
+
+        function startPlayback() {
+            if (isPlaying) stopPlayback();
+
+            const { buffer, timeline } = synthesizeT30Audio();
+            updateFrameInspector();
+
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const audioBuffer = audioCtx.createBuffer(1, buffer.length, SAMPLE_RATE);
+            audioBuffer.copyToChannel(buffer, 0);
+
+            analyserNode = audioCtx.createAnalyser();
+            analyserNode.fftSize = 2048;
+            analyserNode.smoothingTimeConstant = 0.25;
+
+            activeSourceNode = audioCtx.createBufferSource();
+            activeSourceNode.buffer = audioBuffer;
+            activeSourceNode.connect(analyserNode);
+            analyserNode.connect(audioCtx.destination);
+
+            activeSourceNode.onended = () => {
+                if (isPlaying) stopPlayback();
+            };
+
+            isPlaying = true;
+            playStartTime = audioCtx.currentTime;
+            btnPlay.disabled = true;
+            btnPlay.classList.add('opacity-50');
+            btnStop.disabled = false;
+
+            // Update LEDs
+            document.getElementById('led-tx').className = 'w-2 h-2 rounded-full bg-rose-500 led-active';
+            document.getElementById('led-carrier').className = 'w-2 h-2 rounded-full bg-emerald-400';
+
+            // Clear waterfall canvas for fresh sweep
+            waterfallCtx.fillStyle = '#05080f';
+            waterfallCtx.fillRect(0, 0, waterfallCanvas.width, waterfallCanvas.height);
+
+            activeSourceNode.start(0);
+            renderVisualizers(buffer.length / SAMPLE_RATE, timeline);
+        }
+
+        function stopPlayback() {
+            isPlaying = false;
+            if (activeSourceNode) {
+                try { activeSourceNode.stop(); } catch (e) {}
+                activeSourceNode.disconnect();
+                activeSourceNode = null;
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            btnPlay.disabled = false;
+            btnPlay.classList.remove('opacity-50');
+            btnStop.disabled = true;
+
+            document.getElementById('led-tx').className = 'w-2 h-2 rounded-full bg-slate-600';
+            document.getElementById('led-carrier').className = 'w-2 h-2 rounded-full bg-slate-600';
+            document.getElementById('phase-badge').textContent = 'IDLE / STANDBY';
+            document.getElementById('playback-progress').style.width = '0%';
+            drawIdleScope();
+        }
+
+        function renderVisualizers(totalDuration, timeline) {
+            if (!isPlaying || !analyserNode) return;
+
+            const elapsed = audioCtx.currentTime - playStartTime;
+            const pct = Math.min(100, (elapsed / totalDuration) * 100);
+            document.getElementById('playback-progress').style.width = `${pct}%`;
+            document.getElementById('time-readout').textContent = `${Math.min(elapsed, totalDuration).toFixed(2)}s / ${totalDuration.toFixed(2)}s`;
+
+            // Determine current T.30 phase label
+            const currentPhase = timeline.find(t => elapsed >= t.startSec && elapsed <= t.endSec);
+            if (currentPhase) {
+                document.getElementById('phase-badge').textContent = currentPhase.label;
+            }
+
+            // 1. Draw Time-Domain Oscilloscope
+            const timeData = new Float32Array(analyserNode.fftSize);
+            analyserNode.getFloatTimeDomainData(timeData);
+
+            const sw = scopeCanvas.width;
+            const sh = scopeCanvas.height;
+            scopeCtx.fillStyle = '#05080f';
+            scopeCtx.fillRect(0, 0, sw, sh);
+
+            // Subtle graticule
+            scopeCtx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
+            scopeCtx.lineWidth = 1;
+            for (let x = sw / 10; x < sw; x += sw / 10) {
+                scopeCtx.beginPath(); scopeCtx.moveTo(x, 0); scopeCtx.lineTo(x, sh); scopeCtx.stroke();
+            }
+            for (let y = sh / 4; y < sh; y += sh / 4) {
+                scopeCtx.beginPath(); scopeCtx.moveTo(0, y); scopeCtx.lineTo(sw, y); scopeCtx.stroke();
+            }
+
+            const primaryColor = crtTheme === 'emerald' ? '#34d399' : '#fbbf24';
+            const glowColor = crtTheme === 'emerald' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(245, 158, 11, 0.5)';
+
+            scopeCtx.strokeStyle = primaryColor;
+            scopeCtx.shadowColor = glowColor;
+            scopeCtx.shadowBlur = 8;
+            scopeCtx.lineWidth = 2;
+            scopeCtx.beginPath();
+
+            // Trigger on zero-crossing for rock-solid waveform lock
+            let triggerIdx = 0;
+            for (let i = 1; i < timeData.length / 2; i++) {
+                if (timeData[i - 1] < 0 && timeData[i] >= 0) {
+                    triggerIdx = i;
+                    break;
+                }
+            }
+
+            const displaySamples = 600;
+            const sliceWidth = sw / displaySamples;
+            for (let i = 0; i < displaySamples; i++) {
+                const sample = timeData[triggerIdx + i] || 0;
+                const y = (sh / 2) - (sample * (sh * 0.42));
+                if (i === 0) scopeCtx.moveTo(0, y);
+                else scopeCtx.lineTo(i * sliceWidth, y);
+            }
+            scopeCtx.stroke();
+            scopeCtx.shadowBlur = 0;
+
+            // 2. Draw Scrolling Waterfall Spectrogram (0 Hz to 3400 Hz)
+            const freqBins = new Uint8Array(analyserNode.frequencyBinCount);
+            analyserNode.getByteFrequencyData(freqBins);
+
+            const ww = waterfallCanvas.width;
+            const wh = waterfallCanvas.height;
+
+            // Shift existing waterfall down by 2 pixels
+            waterfallCtx.drawImage(waterfallCanvas, 0, 0, ww, wh - 2, 0, 2, ww, wh - 2);
+
+            // Map 300 Hz .. 3200 Hz across canvas width
+            const nyquist = SAMPLE_RATE / 2;
+            const minBin = Math.floor((300 / nyquist) * freqBins.length);
+            const maxBin = Math.ceil((3200 / nyquist) * freqBins.length);
+            const binSpan = maxBin - minBin;
+
+            for (let x = 0; x < ww; x++) {
+                const binIndex = minBin + Math.floor((x / ww) * binSpan);
+                const val = freqBins[binIndex] || 0; // 0..255
+
+                if (val < 30) {
+                    waterfallCtx.fillStyle = '#05080f';
+                } else if (crtTheme === 'emerald') {
+                    const intensity = val / 255;
+                    const r = Math.floor(intensity * intensity * 180);
+                    const g = Math.floor(40 + intensity * 215);
+                    const b = Math.floor(30 + intensity * 110);
+                    waterfallCtx.fillStyle = `rgb(${r},${g},${b})`;
+                } else {
+                    const intensity = val / 255;
+                    const r = Math.floor(60 + intensity * 195);
+                    const g = Math.floor(intensity * 190);
+                    const b = Math.floor(intensity * intensity * 90);
+                    waterfallCtx.fillStyle = `rgb(${r},${g},${b})`;
+                }
+                waterfallCtx.fillRect(x, 0, 2, 2);
+            }
+
+            animationFrameId = requestAnimationFrame(() => renderVisualizers(totalDuration, timeline));
+        }
+
+        // =====================================================================
+        // 5. 16-BIT PCM .WAV FILE ENCODER & DOWNLOADER
+        // =====================================================================
+
+        function encodeWAV(float32Samples, sampleRate) {
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+            const blockAlign = numChannels * (bitsPerSample / 8);
+            const dataSize = float32Samples.length * 2;
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            function writeString(offset, str) {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+            }
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + dataSize, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);             // Subchunk1Size (16 for PCM)
+            view.setUint16(20, 1, true);              // AudioFormat (1 = PCM)
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            let offset = 44;
+            for (let i = 0; i < float32Samples.length; i++, offset += 2) {
+                const s = Math.max(-1, Math.min(1, float32Samples[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        btnDownloadWav.addEventListener('click', () => {
+            const { buffer } = synthesizeT30Audio();
+            const wavBlob = encodeWAV(buffer, SAMPLE_RATE);
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `ITU_T30_V21_Fax_${Date.now()}.wav`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            showToast('Exported 16-bit 44.1kHz PCM .WAV file!', 'success');
+        });
+
+        // =====================================================================
+        // 6. GOERTZEL V.21 FSK DEMODULATOR & HDLC FRAME EXTRACTOR
+        // =====================================================================
+
+        /**
+         * Computes Goertzel DFT magnitude squared at targetFreq over a slice of samples.
+         */
+        function goertzelPower(samples, startIdx, length, targetFreq, sampleRate) {
+            const k = (length * targetFreq) / sampleRate;
+            const omega = (2.0 * Math.PI * k) / length;
+            const coeff = 2.0 * Math.cos(omega);
+            let q0 = 0, q1 = 0, q2 = 0;
+            const end = Math.min(samples.length, startIdx + length);
+
+            for (let i = startIdx; i < end; i++) {
+                q0 = coeff * q1 - q2 + samples[i];
+                q2 = q1;
+                q1 = q0;
+            }
+            return q1 * q1 + q2 * q2 - q1 * q2 * coeff;
+        }
+
+        function appendDecoderLog(msg, type = 'info') {
+            const logBox = document.getElementById('decoder-log');
+            const line = document.createElement('div');
+            const color = type === 'success' ? 'text-emerald-400' :
+                          type === 'warn' ? 'text-amber-400' :
+                          type === 'error' ? 'text-rose-400' : 'text-slate-400';
+            line.className = color;
+            line.textContent = `[DSP] ${msg}`;
+            logBox.appendChild(line);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        /**
+         * Demodulates an arbitrary Float32Array audio waveform at sampleRate
+         * to recover any ITU-T T.30 V.21 HDLC frames hidden inside.
+         */
+        function demodulateT30Signal(samples, sampleRate) {
+            const logBox = document.getElementById('decoder-log');
+            logBox.innerHTML = '';
+            appendDecoderLog(`Analyzing ${samples.length} samples (${(samples.length / sampleRate).toFixed(2)}s @ ${sampleRate}Hz)...`);
+
+            // 1. Scan for CNG (1100 Hz) & CED (2100 Hz) handshake tones
+            let cngDetected = false;
+            let cedDetected = false;
+            const scanStep = Math.floor(sampleRate * 0.05); // 50ms windows
+            for (let i = 0; i + scanStep < samples.length; i += scanStep) {
+                const p1100 = goertzelPower(samples, i, scanStep, FREQ_CNG, sampleRate);
+                const p2100 = goertzelPower(samples, i, scanStep, FREQ_CED, sampleRate);
+                const p1650 = goertzelPower(samples, i, scanStep, FREQ_MARK, sampleRate);
+                const p1850 = goertzelPower(samples, i, scanStep, FREQ_SPACE, sampleRate);
+                const fskEnergy = p1650 + p1850;
+
+                if (p1100 > fskEnergy * 4 && p1100 > 5) cngDetected = true;
+                if (p2100 > fskEnergy * 4 && p2100 > 5) cedDetected = true;
+            }
+
+            const tonesStr = [
+                cngDetected ? 'CNG(1100Hz)' : null,
+                cedDetected ? 'CED(2100Hz)' : null,
+                'V.21-FSK'
+            ].filter(Boolean).join(' + ');
+            document.getElementById('dec-stat-tones').textContent = tonesStr;
+            appendDecoderLog(`Handshake scan: CNG=${cngDetected ? 'YES' : 'NO'}, CED=${cedDetected ? 'YES' : 'NO'}`);
+
+            // 2. Determine candidate baud rates to test
+            const baudChoice = document.getElementById('decode-baud').value;
+            const candidateBauds = baudChoice === 'auto' ? [300, 600, 1200] : [parseInt(baudChoice, 10)];
+
+            let bestResult = null;
+
+            for (const baud of candidateBauds) {
+                const result = tryDecodeAtBaud(samples, sampleRate, baud);
+                if (result && result.text.length > 0) {
+                    bestResult = { baud, ...result };
+                    if (result.crcValid) break; // Found exact CRC-verified frame!
+                }
+            }
+
+            const statusLed = document.getElementById('decode-status-led');
+            const badge = document.getElementById('decode-badge');
+            const outputBox = document.getElementById('decoded-text-output');
+
+            if (bestResult && bestResult.text.length > 0) {
+                statusLed.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+                badge.textContent = bestResult.crcValid ? 'FRAME VERIFIED (CRC OK)' : 'FRAME EXTRACTED';
+                badge.className = 'px-2.5 py-0.5 rounded text-xs font-mono bg-emerald-500/15 border border-emerald-500/40 text-emerald-300';
+
+                outputBox.textContent = bestResult.text;
+                document.getElementById('dec-stat-baud').textContent = `${bestResult.baud} bps`;
+                document.getElementById('dec-stat-flags').textContent = `${bestResult.flagCount} × 0x7E`;
+                document.getElementById('dec-stat-crc').textContent = bestResult.crcValid
+                    ? `PASS (0x${bestResult.crcHex})`
+                    : `WARN (0x${bestResult.crcHex})`;
+                document.getElementById('dec-stat-crc').className = bestResult.crcValid
+                    ? 'text-xs font-bold text-emerald-400 mt-0.5'
+                    : 'text-xs font-bold text-amber-400 mt-0.5';
+
+                appendDecoderLog(`SUCCESS @ ${bestResult.baud} bps! Extracted ${bestResult.text.length} chars. CRC-16=${bestResult.crcValid ? 'VALID' : 'MISMATCH'}.`, 'success');
+                showToast('Hidden T.30 message successfully demodulated!', 'success');
+            } else {
+                statusLed.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                badge.textContent = 'NO VALID T.30 FRAME';
+                badge.className = 'px-2.5 py-0.5 rounded text-xs font-mono bg-rose-500/15 border border-rose-500/40 text-rose-300';
+                outputBox.textContent = '[ERROR] Could not lock onto a valid V.21 HDLC 0x7E frame in the audio.';
+                appendDecoderLog('Failed to synchronize on HDLC 0x7E preamble flags.', 'error');
+                showToast('No valid V.21 frame detected in signal.', 'warn');
+            }
+        }
+
+        /**
+         * Oversampled Goertzel slicer + HDLC flag sync & bit-destuffing engine.
+         */
+        function tryDecodeAtBaud(samples, sampleRate, baudRate) {
+            const samplesPerBit = sampleRate / baudRate;
+            // Oversample 8x per bit period to find optimal symbol center phase
+            const subSteps = 8;
+            const stepSamples = samplesPerBit / subSteps;
+            const windowLen = Math.max(16, Math.floor(samplesPerBit * 0.85));
+
+            const softDecisions = []; // +1 for Mark (1650Hz), -1 for Space (1850Hz), 0 for out-of-band
+
+            for (let pos = 0; pos + windowLen < samples.length; pos += stepSamples) {
+                const idx = Math.floor(pos);
+                const pMark = goertzelPower(samples, idx, windowLen, FREQ_MARK, sampleRate);
+                const pSpace = goertzelPower(samples, idx, windowLen, FREQ_SPACE, sampleRate);
+                const pCng = goertzelPower(samples, idx, windowLen, FREQ_CNG, sampleRate);
+                const pCed = goertzelPower(samples, idx, windowLen, FREQ_CED, sampleRate);
+
+                const fskSum = pMark + pSpace;
+                const nonFsk = pCng + pCed;
+
+                // Carrier squelch: ensure V.21 energy dominates CNG/CED tones and noise floor
+                if (fskSum > 1.5 && fskSum > nonFsk * 1.4) {
+                    softDecisions.push(pMark >= pSpace ? 1 : 0);
+                } else {
+                    softDecisions.push(-1); // No V.21 carrier
+                }
+            }
+
+            // Try all 8 sub-bit sampling phases to find the alignment that yields valid 0x7E HDLC flags
+            let bestCandidate = null;
+
+            for (let phaseOffset = 0; phaseOffset < subSteps; phaseOffset++) {
+                const rawBits = [];
+                for (let i = phaseOffset; i < softDecisions.length; i += subSteps) {
+                    if (softDecisions[i] !== -1) {
+                        rawBits.push(softDecisions[i]);
+                    }
+                }
+
+                const parsed = extractHDLCFromBitstream(rawBits);
+                if (parsed && parsed.text.length > 0) {
+                    if (!bestCandidate || (parsed.crcValid && !bestCandidate.crcValid) || parsed.text.length > bestCandidate.text.length) {
+                        bestCandidate = parsed;
+                    }
+                }
+            }
+
+            return bestCandidate;
+        }
+
+        /**
+         * Scans a raw recovered bit array for HDLC 0x7E flags (01111110),
+         * performs zero-bit destuffing, reassembles LSB-first bytes, and checks CRC-16.
+         */
+        function extractHDLCFromBitstream(bits) {
+            const flagPattern = [0, 1, 1, 1, 1, 1, 1, 0];
+            let flagCount = 0;
+            let inFrame = false;
+            let frameBits = [];
+            let onesRun = 0;
+            let bestDecoded = null;
+
+            for (let i = 0; i < bits.length; i++) {
+                // Check for 0x7E flag at position i
+                let isFlag = false;
+                if (i + 8 <= bits.length) {
+                    isFlag = true;
+                    for (let k = 0; k < 8; k++) {
+                        if (bits[i + k] !== flagPattern[k]) {
+                            isFlag = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (isFlag) {
+                    flagCount++;
+                    if (inFrame && frameBits.length >= 40) {
+                        // End of frame reached! Reassemble bytes (LSB first)
+                        const byteCount = Math.floor(frameBits.length / 8);
+                        const bytes = new Uint8Array(byteCount);
+                        for (let b = 0; b < byteCount; b++) {
+                            let val = 0;
+                            for (let bit = 0; bit < 8; bit++) {
+                                val |= (frameBits[b * 8 + bit] << bit);
+                            }
+                            bytes[b] = val;
+                        }
+
+                        // Verify T.30 Header (0xFF, 0x13, 0x20) & CRC-16
+                        if (bytes.length >= 5 && bytes[0] === 0xFF && bytes[1] === 0x13) {
+                            const body = bytes.slice(0, bytes.length - 2);
+                            const rxCrc = bytes[bytes.length - 2] | (bytes[bytes.length - 1] << 8);
+                            const calcCrc = computeCRC16CCITT(body);
+                            const crcValid = (rxCrc === calcCrc);
+
+                            const payload = bytes.slice(3, bytes.length - 2);
+                            const decoder = new TextDecoder('utf-8', { fatal: false });
+                            const text = decoder.decode(payload);
+
+                            if (!bestDecoded || (crcValid && !bestDecoded.crcValid) || text.length > bestDecoded.text.length) {
+                                bestDecoded = {
+                                    text,
+                                    crcValid,
+                                    crcHex: rxCrc.toString(16).toUpperCase().padStart(4, '0'),
+                                    flagCount
+                                };
+                            }
+                        }
+                    }
+                    // Reset for next frame after flag
+                    inFrame = true;
+                    frameBits = [];
+                    onesRun = 0;
+                    i += 7; // Advance past 8-bit flag
+                    continue;
+                }
+
+                if (inFrame) {
+                    const bit = bits[i];
+                    if (onesRun === 5) {
+                        if (bit === 0) {
+                            // Stuffed '0' bit -> discard it!
+                            onesRun = 0;
+                            continue;
+                        } else {
+                            // Abort sequence (7+ ones) -> reset frame
+                            inFrame = false;
+                            frameBits = [];
+                            onesRun = 0;
+                            continue;
+                        }
+                    }
+                    frameBits.push(bit);
+                    onesRun = (bit === 1) ? onesRun + 1 : 0;
+                }
+            }
+
+            if (bestDecoded) bestDecoded.flagCount = flagCount;
+            return bestDecoded;
+        }
+
+        // =====================================================================
+        // 7. EVENT LISTENERS & NAVIGATION WIRING
+        // =====================================================================
+
+        // Tab Switching
+        const tabModulator = document.getElementById('tab-modulator');
+        const tabDemodulator = document.getElementById('tab-demodulator');
+        const viewModulator = document.getElementById('view-modulator');
+        const viewDemodulator = document.getElementById('view-demodulator');
+
+        function switchTab(target) {
+            if (target === 'mod') {
+                viewModulator.classList.remove('hidden');
+                viewDemodulator.classList.add('hidden');
+                tabModulator.className = 'px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm flex items-center space-x-2';
+                tabDemodulator.className = 'px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent flex items-center space-x-2';
+                resizeCanvases();
+            } else {
+                viewModulator.classList.add('hidden');
+                viewDemodulator.classList.remove('hidden');
+                tabDemodulator.className = 'px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm flex items-center space-x-2';
+                tabModulator.className = 'px-4 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-all text-slate-400 hover:text-slate-200 border border-transparent flex items-center space-x-2';
+            }
+        }
+
+        tabModulator.addEventListener('click', () => switchTab('mod'));
+        tabDemodulator.addEventListener('click', () => switchTab('demod'));
+
+        // Loopback test button
+        btnSendToDecoder.addEventListener('click', () => {
+            const { buffer } = synthesizeT30Audio();
+            switchTab('demod');
+            setTimeout(() => demodulateT30Signal(buffer, SAMPLE_RATE), 80);
+        });
+
+        // Decode current synthesized audio button
+        document.getElementById('btn-decode-current').addEventListener('click', () => {
+            const { buffer } = synthesizeT30Audio();
+            demodulateT30Signal(buffer, SAMPLE_RATE);
+        });
+
+        // Upload .WAV / Audio File handler
+        document.getElementById('wav-file-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('upload-filename').textContent = file.name;
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+                const channelData = audioBuffer.getChannelData(0);
+                demodulateT30Signal(channelData, audioBuffer.sampleRate);
+                await decodeCtx.close();
+            } catch (err) {
+                appendDecoderLog(`Audio file decode error: ${err.message}`, 'error');
+                showToast('Unable to decode uploaded audio file.', 'warn');
+            }
+        });
+
+        // Play / Stop controls
+        btnPlay.addEventListener('click', startPlayback);
+        btnStop.addEventListener('click', stopPlayback);
+
+        // Live input listeners
+        elMessage.addEventListener('input', updateFrameInspector);
+        elOptHandshake.addEventListener('change', updateFrameInspector);
+        elOptTraining.addEventListener('change', updateFrameInspector);
+        elOptBaud.addEventListener('change', updateFrameInspector);
+
+        // Preset buttons
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                elMessage.value = btn.getAttribute('data-msg');
+                updateFrameInspector();
+            });
+        });
+
+        // Copy utilities (using document.execCommand('copy') fallback for iframe safety)
+        function copyToClipboard(text, label) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast(`${label} copied to clipboard!`, 'success');
+        }
+
+        document.getElementById('btn-copy-hex').addEventListener('click', () => {
+            copyToClipboard(elHexDump.textContent.trim(), 'HDLC Hex Dump');
+        });
+
+        document.getElementById('btn-copy-decoded').addEventListener('click', () => {
+            copyToClipboard(document.getElementById('decoded-text-output').textContent, 'Decoded text');
+        });
+
+        // CRT Phosphor Theme Switcher (Green <-> Amber)
+        document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+            crtTheme = crtTheme === 'emerald' ? 'amber' : 'emerald';
+            const dot = document.getElementById('theme-dot');
+            const scopeCard = scopeCanvas.closest('.rounded-2xl');
+
+            if (crtTheme === 'amber') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]';
+                elMessage.classList.replace('text-emerald-300', 'text-amber-300');
+                elBitstream.classList.replace('text-emerald-400/90', 'text-amber-400/90');
+                scopeCard.classList.replace('phosphor-shadow', 'amber-shadow');
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+                elMessage.classList.replace('text-amber-300', 'text-emerald-300');
+                elBitstream.classList.replace('text-amber-400/90', 'text-emerald-400/90');
+                scopeCard.classList.replace('amber-shadow', 'phosphor-shadow');
+            }
+            if (!isPlaying) drawIdleScope();
+        });
+
+        // Window Resize & Initialization
+        window.addEventListener('resize', resizeCanvases);
+        window.onload = function () {
+            updateFrameInspector();
+            resizeCanvases();
+        };
+    </script>
+</body>
+</html>
